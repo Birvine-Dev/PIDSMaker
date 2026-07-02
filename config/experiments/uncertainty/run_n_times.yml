@@ -8,5 +8,5 @@ experiment:
   uncertainty:
     deep_ensemble:
       method: increasing_seed
-      iterations: 5
+      iterations: 10
       restart_from: featurization
