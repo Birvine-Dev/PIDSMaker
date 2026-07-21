@@ -881,12 +881,18 @@ def save_model(model, path: str, cfg):
     )
 
     if isinstance(model.encoder, TGNEncoder):
-        torch.save(
-            model.encoder.neighbor_loader,
-            os.path.join(path, "neighbor_loader.pkl"),
-            pickle_protocol=pickle.HIGHEST_PROTOCOL,
-        )
-        if cfg.training.encoder.tgn.use_memory or "time_encoding" in cfg.batching.edge_features:
+        # Guarded: older versions of TGNEncoder held a `neighbor_loader`;
+        # current versions precompute neighbor graphs during batching and
+        # have no such attribute. Save whichever stateful pieces exist.
+        if hasattr(model.encoder, "neighbor_loader"):
+            torch.save(
+                model.encoder.neighbor_loader,
+                os.path.join(path, "neighbor_loader.pkl"),
+                pickle_protocol=pickle.HIGHEST_PROTOCOL,
+            )
+        if (
+            cfg.training.encoder.tgn.use_memory or "time_encoding" in cfg.batching.edge_features
+        ) and hasattr(model.encoder, "memory"):
             torch.save(
                 model.encoder.memory,
                 os.path.join(path, "memory.pkl"),
@@ -901,9 +907,13 @@ def load_model(model, path: str, cfg, map_location=None):
     model.load_state_dict(torch.load(os.path.join(path, "state_dict.pkl")))
 
     if isinstance(model.encoder, TGNEncoder):
-        model.encoder.neighbor_loader = torch.load(os.path.join(path, "neighbor_loader.pkl"))
-        if cfg.training.encoder.tgn.use_memory or "time_encoding" in cfg.batching.edge_features:
-            model.encoder.memory = torch.load(os.path.join(path, "memory.pkl"))
+        # Symmetric with save_model: load whichever pieces were saved.
+        nl_path = os.path.join(path, "neighbor_loader.pkl")
+        if os.path.exists(nl_path):
+            model.encoder.neighbor_loader = torch.load(nl_path)
+        mem_path = os.path.join(path, "memory.pkl")
+        if os.path.exists(mem_path):
+            model.encoder.memory = torch.load(mem_path)
 
     return model
 
