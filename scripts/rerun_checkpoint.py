@@ -103,10 +103,19 @@ def main():
         os.makedirs(cfg_i.training._edge_losses_dir, exist_ok=True)
         os.makedirs(cfg_i.evaluation._precision_recall_dir, exist_ok=True)
 
-        # The seed is set immediately before inference: for stochastic models
-        # (NodLink's latent sampling) this changes the scores; for
-        # deterministic models it changes nothing — which is the point.
+        # The seed is set immediately before inference — BUT inference_loop.main
+        # internally calls set_seed(cfg) at its start (inference_loop.py:258),
+        # which silently re-seeds every pass back to cfg.training.seed (identical
+        # across passes, since the checkpoint path is hashed from it). Override
+        # that internal call so it re-seeds with THIS pass's seed instead.
         set_seed(cfg_i, seed=seed)
+        inference_loop.set_seed = (
+            lambda s: (lambda cfg, seed=None: set_seed(cfg, seed=s))
+        )(seed)
+
+        # Harness self-check: this value MUST differ between passes. Identical
+        # probes across passes mean the seeding is broken and results are void.
+        log(f"[seed {seed}] RNG probe (must differ per pass): {torch.rand(1).item():.10f}")
 
         # split="all" regenerates val losses under the same seed too, so
         # validation-derived thresholds (e.g. Grubbs) see this pass's noise —
