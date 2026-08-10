@@ -962,6 +962,9 @@ TASK_ARGS = {
             bool, desc="Whether to force PyTorch to use deterministic algorithms."
         ),
         "num_epochs": Arg(int),
+        "save_checkpoints": Arg(
+            bool, desc="Save a model checkpoint at every epoch (default on). Disable to save disk on large graphs."
+        ),
         "patience": Arg(int),
         "lr": Arg(float),
         "weight_decay": Arg(float),

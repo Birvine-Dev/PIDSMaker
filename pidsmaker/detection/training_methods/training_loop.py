@@ -226,8 +226,10 @@ def main(cfg):
         # commented-out lines referenced `gnn_models_dir`, which is not defined
         # anywhere (dead code) — `cfg.training._trained_models_dir` is the
         # framework's derived path for stored models (see config/pipeline.py).
-        model_path = os.path.join(cfg.training._trained_models_dir, f"model_epoch_{epoch}")
-        save_model(model, model_path, cfg)
+        _save_ckpt = getattr(cfg.training, "save_checkpoints", None)
+        if _save_ckpt is None or _save_ckpt:
+            model_path = os.path.join(cfg.training._trained_models_dir, f"model_epoch_{epoch}")
+            save_model(model, model_path, cfg)
 
         # Test
         if (epoch + 1) % 2 == 0 or epoch == 0:
