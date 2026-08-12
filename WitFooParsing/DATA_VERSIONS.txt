@@ -1,0 +1,4 @@
+# HuggingFace dataset revisions all results are based on (recorded 2026-08-11)
+# Re-fetch exactly these with revision=<sha> in any hf download call.
+witfoo/precinct6-cybersecurity      1c0be6c03713af68eb9badc404297a63546bf2b4
+witfoo/precinct6-cybersecurity-100m 5c9d5a55cd479f5525992c9f1b149a5932a06ea8
