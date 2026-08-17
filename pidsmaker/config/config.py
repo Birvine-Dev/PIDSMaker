@@ -512,7 +512,7 @@ DATASET_DEFAULT_CONFIG = {
         "database": "witfoo_toy",
         "database_all_file": "witfoo_toy",
         "num_node_types": 3,
-        "num_edge_types": 10,   # B-mapping stub vocabulary (4 event types x SRC/DST + margin)
+        "num_edge_types": 14,
         "start_date": "2024-05-13",
         "end_date": "2024-05-15",
         "train_dates": ["2024-05-13"],

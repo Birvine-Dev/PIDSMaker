@@ -70,6 +70,39 @@ rel2id_optc = {
     "WRITE": 10,
 }
 
+rel2id_witfoo = {
+    1: "NETWORK_FLOW_SRC",
+    "NETWORK_FLOW_SRC": 1,
+    2: "NETWORK_FLOW_DST",
+    "NETWORK_FLOW_DST": 2,
+    3: "EVENT_SRC",
+    "EVENT_SRC": 3,
+    4: "EVENT_DST",
+    "EVENT_DST": 4,
+    5: "DNS_RESOLVE_SRC",
+    "DNS_RESOLVE_SRC": 5,
+    6: "DNS_RESOLVE_DST",
+    "DNS_RESOLVE_DST": 6,
+    7: "AUDIT_EVENT_SRC",
+    "AUDIT_EVENT_SRC": 7,
+    8: "AUDIT_EVENT_DST",
+    "AUDIT_EVENT_DST": 8,
+    9: "SRC_OF",
+    "SRC_OF": 9,
+    10: "DST_OF",
+    "DST_OF": 10,
+    11: "NETWORK_FLOW",
+    "NETWORK_FLOW": 11,
+    12: "EVENT",
+    "EVENT": 12,
+    13: "DNS_RESOLVE",
+    "DNS_RESOLVE": 13,
+    14: "AUDIT_EVENT",
+    "AUDIT_EVENT": 14,
+}
+
+witfoo_datasets = ["witfoo_toy", "witfoo_2m", "witfoo_114m"]
+
 rel2id_atlasv2 = {
     0: "ACTION_FILE_UNDELETE",
     1: "ACTION_FILE_OPEN_SET_ATTRIBUTES",
@@ -326,6 +359,8 @@ def decrement_dict(d):
 def get_rel2id(cfg, from_zero=False):
     dataset_name = cfg.dataset.name.lower()
 
+    if dataset_name in witfoo_datasets:
+        return decrement_dict(rel2id_witfoo) if from_zero else rel2id_witfoo
     if dataset_name in optc_datasets:
         return decrement_dict(rel2id_optc) if from_zero else rel2id_optc
     elif dataset_name in atlasv2_datasets:
