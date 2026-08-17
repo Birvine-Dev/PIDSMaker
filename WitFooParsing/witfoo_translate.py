@@ -24,6 +24,7 @@ Outputs (CSV per PIDSMaker table, ready for postgres COPY later):
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
@@ -92,13 +93,18 @@ def credential_row(node):
     return (node["node_id"], label)
 
 def event_node_row(edge):
-    """Reified event -> netflow_node_table. Doc 4c.
-    Label text = [type message_type action] [protocol stream] [srcport:dstport]"""
+    """Reified event -> netflow_node_table (4 text slots per PIDSMaker schema).
+    ORTHRUS's label recipe reads type+remote_ip+remote_port, which the graph
+    builder maps to (dst_addr, dst_port) - so the richest text goes there."""
     a = edge.get("attrs") or {}
-    part1 = " ".join(str(x) for x in (edge.get("type"), a.get("message_type"), a.get("action")) if x)
-    part2 = " ".join(str(x) for x in (a.get("protocol"), a.get("stream")) if x)
-    part3 = f"{a.get('src_port','')}:{a.get('dst_port','')}".strip(":")
-    return (edge["edge_id"], " | ".join(p for p in (part1, part2, part3) if p))
+    flavour = " ".join(str(x) for x in (edge.get("type"), a.get("message_type"), a.get("action")) if x)
+    transport = " ".join(str(x) for x in (a.get("protocol"), a.get("stream")) if x)
+    ports = f"{a.get('src_port','')}:{a.get('dst_port','')}".strip(":")
+    # (src_addr, src_port) -> local_* (unused by ORTHRUS recipe, kept meaningful)
+    return (edge["edge_id"], transport, str(a.get("protocol") or ""), flavour, ports)
+
+def _h(x):
+    return hashlib.md5(str(x).encode()).hexdigest()
 
 def stub_type(edge, mapping):
     """Doc 4d / open question 1. B: carry event type; C: generic."""
@@ -122,6 +128,11 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
     os.makedirs(out, exist_ok=True)
     subjects, files_, netflows, events, gt = [], [], [], [], []
     node_type = {}
+    uuid2idx = {}
+    def idx(u):
+        if u not in uuid2idx:
+            uuid2idx[u] = len(uuid2idx)
+        return uuid2idx[u]
     skipped_ts = 0
     n_edges = n_mal = 0
     shift_delta = None
@@ -160,13 +171,12 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
         if t in ("CRED",):
             t = "CREDENTIAL"  # normalise straggler alias
         node_type[n["node_id"]] = t
-        if t == "HOST":
-            subjects.append(host_row(n))
+        if t == "HOST" or t in ("SERVICE", "FILE", "ACTOR"):
+            u, path, cmd = host_row(n)
+            subjects.append((u, _h((path, cmd)), path, cmd, idx(u)))
         elif t == "CREDENTIAL":
-            files_.append(credential_row(n))
-        # SERVICE/FILE/ACTOR stragglers (44 in real data): treat as hosts
-        elif t in ("SERVICE", "FILE", "ACTOR"):
-            subjects.append(host_row(n))
+            u, path = credential_row(n)
+            files_.append((u, _h(path), path, idx(u)))
 
     known = set(node_type)
 
@@ -189,15 +199,16 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
             n_mal += 1
 
         if mapping == "A":
-            events.append((e["src"], e.get("type", "EVENT"), e["dst"], ts_ns))
+            events.append((e["src"], idx(e["src"]), e.get("type", "EVENT"),
+                           e["dst"], idx(e["dst"]), e["edge_id"], ts_ns))
             if mal:
                 gt.extend([e["src"], e["dst"]])
         else:  # B or C: reify
-            uuid, label = event_node_row(e)
-            netflows.append((uuid, label))
+            uuid, sa, sp, da, dp = event_node_row(e)
+            netflows.append((uuid, _h((sa, sp, da, dp)), sa, sp, da, dp, idx(uuid)))
             st_src, st_dst = stub_type(e, mapping)
-            events.append((e["src"], st_src, uuid, ts_ns))
-            events.append((uuid, st_dst, e["dst"], ts_ns))
+            events.append((e["src"], idx(e["src"]), st_src, uuid, idx(uuid), f"{e['edge_id']}:s", ts_ns))
+            events.append((uuid, idx(uuid), st_dst, e["dst"], idx(e["dst"]), f"{e['edge_id']}:d", ts_ns))
             if mal:
                 gt.append(uuid)
 
@@ -210,11 +221,14 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
             wr.writerow(header)
             wr.writerows(rows)
 
-    w("subject_node_table.csv", ["uuid", "path", "cmd"], subjects)
-    w("file_node_table.csv", ["uuid", "path"], files_)
-    w("netflow_node_table.csv", ["uuid", "label"], netflows)
-    w("event_table.csv", ["src", "operation", "dst", "timestamp_rec"], events)
-    w("ground_truth_nodes.csv", ["uuid"], [(g,) for g in gt])
+    w("subject_node_table.csv", ["node_uuid", "hash_id", "path", "cmd", "index_id"], subjects)
+    w("file_node_table.csv", ["node_uuid", "hash_id", "path", "index_id"], files_)
+    w("netflow_node_table.csv", ["node_uuid", "hash_id", "src_addr", "src_port", "dst_addr", "dst_port", "index_id"], netflows)
+    w("event_table.csv", ["src_node", "src_index_id", "operation", "dst_node", "dst_index_id", "event_uuid", "timestamp_rec"], events)
+    # PIDSMaker GT format: headerless 3-column (uuid, label, extra) per labelling.py
+    with open(os.path.join(out, "ground_truth_nodes.csv"), "w", newline="") as f:
+        wr = csv.writer(f)
+        wr.writerows((g, "malicious", "") for g in gt)
 
     total_nodes = len(subjects) + len(files_) + len(netflows)
     lines = [
@@ -228,13 +242,13 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
     lines.append("")
     lines.append("sample rows ORTHRUS-side (what featurization will read):")
     for r in subjects[:2]:
-        lines.append(f"  subject: uuid={r[0]}  path={r[1]}  cmd={r[2]}")
+        lines.append(f"  subject: uuid={r[0]}  path={r[2]}  cmd={r[3]}  idx={r[4]}")
     for r in files_[:1]:
-        lines.append(f"  file:    uuid={r[0]}  path={r[1]}")
+        lines.append(f"  file:    uuid={r[0]}  path={r[2]}  idx={r[3]}")
     for r in netflows[:3]:
-        lines.append(f"  event:   uuid={r[0]}  label='{r[1]}'")
+        lines.append(f"  event:   uuid={r[0]}  ORTHRUS-label-text='netflow {r[4]} {r[5]}'  idx={r[6]}")
     for r in events[:4]:
-        lines.append(f"  edge:    {r[0]} -[{r[1]}]-> {r[2]}  @ {r[3]}")
+        lines.append(f"  edge:    {r[0]} -[{r[2]}]-> {r[3]}  @ {r[6]}")
     summary = "\n".join(lines)
     with open(os.path.join(out, "summary.txt"), "w") as f:
         f.write(summary + "\n")

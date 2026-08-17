@@ -507,6 +507,28 @@ DATASET_DEFAULT_CONFIG = {
             ["carbanakv2_edr/carbanakv2_edr.csv", "2024-04-30 17:30:00", "2024-05-10 20:30:00"]
         ],
     },
+    "WITFOO_TOY": {
+        "raw_dir": "",
+        "database": "witfoo_toy",
+        "database_all_file": "witfoo_toy",
+        "num_node_types": 3,
+        "num_edge_types": 10,   # B-mapping stub vocabulary (4 event types x SRC/DST + margin)
+        "start_date": "2024-05-13",
+        "end_date": "2024-05-15",
+        "train_dates": ["2024-05-13"],
+        "val_dates": ["2024-05-14"],
+        "test_dates": ["2024-05-14"],
+        "unused_dates": [],
+        "ground_truth_relative_path": ["witfoo/toy_incident_9fd6e430.csv"],
+        "attack_to_time_window": [
+            [
+                "witfoo/toy_incident_9fd6e430.csv",
+                "2024-05-14 00:15:00",
+                "2024-05-14 00:25:00",
+            ],
+        ],
+    },
+
 }
 
 # Arguments
