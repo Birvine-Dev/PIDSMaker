@@ -62,18 +62,18 @@ def _toy_edge(i, src, dst, etype, mtype, action, ts, mal=False, **attrs):
     return e
 
 TOY_EDGES = [
-    _toy_edge(1, "100.64.10.131", "172.21.61.66", "NETWORK_FLOW", "firewall_action", "block", 1715648430, mal=True, protocol=6, src_port=45516, dst_port=3210, stream="cisco_asa"),
-    _toy_edge(2, "100.64.10.131", "172.21.61.66", "NETWORK_FLOW", "firewall_action", "block", 1715648430, mal=True, protocol=6, src_port=45517, dst_port=3210, stream="cisco_asa"),
-    _toy_edge(3, "100.64.10.132", "172.21.61.66", "NETWORK_FLOW", "firewall_action", "block", 1715648430, mal=True, protocol=6, src_port=51002, dst_port=3210, stream="cisco_asa"),
-    _toy_edge(4, "100.64.10.131", "172.24.247.113", "NETWORK_FLOW", "firewall_action", "block", 1715648430, mal=True, protocol=6, src_port=45518, dst_port=8443, stream="cisco_asa"),
-    _toy_edge(5, "100.64.10.132", "172.24.247.113", "NETWORK_FLOW", "firewall_action", "block", 1715648430, mal=True, protocol=6, src_port=51003, dst_port=8443, stream="cisco_asa"),
-    _toy_edge(6, "100.64.5.9", "192.168.147.151", "DNS_RESOLVE", "dns_event", "query", 1715648350, stream="dnsmasq"),
-    _toy_edge(7, "100.64.5.9", "10.184.2.7", "NETWORK_FLOW", "flow", "allow", 1715648360, protocol=6, src_port=62858, dst_port=7680, stream="meraki"),
-    _toy_edge(8, "10.184.2.7", "100.64.5.9", "NETWORK_FLOW", "flow", "allow", 1715648361, protocol=6, src_port=7680, dst_port=62858, stream="meraki"),
-    _toy_edge(9, "USER-1776", "100.64.5.9", "EVENT", "account_logon", "Logon", 1715648340, stream="microsoft-windows-security-auditing"),
-    _toy_edge(10, "USER-1776", "10.184.2.7", "EVENT", "account_logon", "Logon", 1715648370, stream="microsoft-windows-security-auditing"),
-    _toy_edge(11, "100.64.1.28", "192.168.147.151", "DNS_RESOLVE", "dns_event", "query", 1715648380, stream="dnsmasq"),
-    _toy_edge(12, "100.64.5.9", "172.21.61.66", "NETWORK_FLOW", "flow", "allow", 1715648390, protocol=6, src_port=50110, dst_port=443, stream="meraki"),
+    _toy_edge(1, "100.64.10.131", "172.21.61.66", "NETWORK_FLOW", "firewall_action", "block", 1715695200, mal=True, protocol=6, src_port=45516, dst_port=3210, stream="cisco_asa"),
+    _toy_edge(2, "100.64.10.131", "172.21.61.66", "NETWORK_FLOW", "firewall_action", "block", 1715695200, mal=True, protocol=6, src_port=45517, dst_port=3210, stream="cisco_asa"),
+    _toy_edge(3, "100.64.10.132", "172.21.61.66", "NETWORK_FLOW", "firewall_action", "block", 1715695200, mal=True, protocol=6, src_port=51002, dst_port=3210, stream="cisco_asa"),
+    _toy_edge(4, "100.64.10.131", "172.24.247.113", "NETWORK_FLOW", "firewall_action", "block", 1715695200, mal=True, protocol=6, src_port=45518, dst_port=8443, stream="cisco_asa"),
+    _toy_edge(5, "100.64.10.132", "172.24.247.113", "NETWORK_FLOW", "firewall_action", "block", 1715695200, mal=True, protocol=6, src_port=51003, dst_port=8443, stream="cisco_asa"),
+    _toy_edge(6, "100.64.5.9", "192.168.147.151", "DNS_RESOLVE", "dns_event", "query", 1715522400, stream="dnsmasq"),
+    _toy_edge(7, "100.64.5.9", "10.184.2.7", "NETWORK_FLOW", "flow", "allow", 1715522410, protocol=6, src_port=62858, dst_port=7680, stream="meraki"),
+    _toy_edge(8, "10.184.2.7", "100.64.5.9", "NETWORK_FLOW", "flow", "allow", 1715522411, protocol=6, src_port=7680, dst_port=62858, stream="meraki"),
+    _toy_edge(9, "USER-1776", "100.64.5.9", "EVENT", "account_logon", "Logon", 1715522395, stream="microsoft-windows-security-auditing"),
+    _toy_edge(10, "USER-1776", "10.184.2.7", "EVENT", "account_logon", "Logon", 1715608800, stream="microsoft-windows-security-auditing"),
+    _toy_edge(11, "100.64.1.28", "192.168.147.151", "DNS_RESOLVE", "dns_event", "query", 1715608810, stream="dnsmasq"),
+    _toy_edge(12, "100.64.5.9", "172.21.61.66", "NETWORK_FLOW", "flow", "allow", 1715695190, protocol=6, src_port=50110, dst_port=443, stream="meraki"),
 ]
 
 # ----------------------------------------------------------------------------
