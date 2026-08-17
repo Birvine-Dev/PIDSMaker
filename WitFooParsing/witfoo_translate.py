@@ -124,7 +124,7 @@ def is_benignish(edge):
 # Translation
 # ----------------------------------------------------------------------------
 
-def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
+def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None):
     os.makedirs(out, exist_ok=True)
     subjects, files_, netflows, events, gt = [], [], [], [], []
     node_type = {}
@@ -152,6 +152,19 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
             continue
         kept_endpoints.add(e.get("src"))
         kept_endpoints.add(e.get("dst"))
+
+    # Pass 0b: chunked shift plan (cut capture into chunks, each landing on its own date)
+    chunk_plan = None
+    if shift_chunks:
+        b_ts = [e["timestamp"] for e in edges if is_benignish(e) and e.get("timestamp", 0) > 1_500_000_000]
+        t0 = min(b_ts)
+        chunk_plan = []
+        for part in shift_chunks.split(","):
+            rng, target = part.split(":", 1)
+            m0, m1 = (float(x) for x in rng.split("-"))
+            tgt = datetime.fromisoformat(target).replace(tzinfo=timezone.utc).timestamp()
+            chunk_plan.append((t0 + m0 * 60, t0 + m1 * 60, tgt))
+        shift_to = None  # chunks override the single shift
 
     # Pass 0: date-shift delta (constant offset; preserves ordering exactly)
     if shift_to is not None:
@@ -190,11 +203,20 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
             continue  # corrupt timestamps (year-1300 bug)
         if e.get("src") not in known or e.get("dst") not in known:
             continue  # ghost endpoints (all were INCIDENT_LINK-only in real data)
-        if shift_delta is not None and is_benignish(e):
+        if chunk_plan is not None and is_benignish(e):
+            for c0, c1, tgt in chunk_plan:
+                if c0 <= ts < c1:
+                    ts = tgt + (ts - c0)
+                    break
+        elif shift_delta is not None and is_benignish(e):
             ts = ts - shift_delta
         ts_ns = int(ts * NS)
         n_edges += 1
         mal = is_confirmed_malicious(e)
+        if mal and gt_date is not None:
+            d = datetime.fromtimestamp(e["timestamp"], tz=timezone.utc).strftime("%Y-%m-%d")
+            if d != gt_date:
+                mal = False  # stays an ordinary (dormant) event; excluded from GT
         if mal:
             n_mal += 1
 
@@ -239,6 +261,11 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out"):
     ]
     if shift_delta is not None:
         lines.append(f"benign shift: -{shift_delta:.0f}s  (capture start {datetime.fromtimestamp(benign_min, tz=timezone.utc)} -> {shift_to})")
+    if chunk_plan is not None:
+        for c0, c1, tgt in chunk_plan:
+            lines.append(f"chunk {int((c0-chunk_plan[0][0])/60)}-{int((c1-chunk_plan[0][0])/60)}min -> {datetime.fromtimestamp(tgt, tz=timezone.utc):%Y-%m-%d %H:%M} UTC")
+    if gt_date is not None:
+        lines.append(f"ground truth restricted to confirmed-malicious events on {gt_date} (dormant archive excluded)")
     lines.append("")
     lines.append("sample rows ORTHRUS-side (what featurization will read):")
     for r in subjects[:2]:
@@ -272,14 +299,21 @@ def main():
     p.add_argument("--mapping", choices=["A", "B", "C"], default="B")
     p.add_argument("--shift-benign-to", default=None,
                    help="ISO datetime; shift benign/suspicious so capture starts here (e.g. 2024-07-08T11:00:00)")
+    p.add_argument("--shift-chunks", default=None,
+                   help="Cut the benign capture into chunks landed on separate dates: "
+                        "'0-40:2024-07-05T11:00:00,40-50:2024-07-06T11:00:00,50-9999:2024-07-08T11:00:00' "
+                        "(minutes from capture start). Overrides --shift-benign-to.")
+    p.add_argument("--gt-date", default=None,
+                   help="Emit ground truth ONLY for confirmed-malicious events on this UTC date (e.g. 2024-07-08). Default: all.")
     p.add_argument("-o", "--out", default="out")
     args = p.parse_args()
 
     if args.toy:
-        translate(TOY_NODES, TOY_EDGES, args.mapping, args.shift_benign_to, args.out)
+        translate(TOY_NODES, TOY_EDGES, args.mapping, args.shift_benign_to, args.out,
+                  shift_chunks=args.shift_chunks, gt_date=args.gt_date)
     else:
         translate(iter_jsonl(args.nodes), iter_jsonl(args.edges), args.mapping,
-                  args.shift_benign_to, args.out)
+                  args.shift_benign_to, args.out, shift_chunks=args.shift_chunks, gt_date=args.gt_date)
 
 
 if __name__ == "__main__":

@@ -528,6 +528,28 @@ DATASET_DEFAULT_CONFIG = {
             ],
         ],
     },
+    "WITFOO_2M": {
+        "raw_dir": "",
+        "database": "witfoo_2m",
+        "database_all_file": "witfoo_2m",
+        "num_node_types": 3,
+        "num_edge_types": 14,
+        "start_date": "2024-07-04",
+        "end_date": "2024-07-09",
+        "train_dates": ["2024-07-05"],
+        "val_dates": ["2024-07-06"],
+        "test_dates": ["2024-07-08"],
+        "unused_dates": ["2024-07-07"],
+        "ground_truth_relative_path": ["witfoo/2m_confirmed_2024-07-08.csv"],
+        "attack_to_time_window": [
+            [
+                "witfoo/2m_confirmed_2024-07-08.csv",
+                "2024-07-08 00:00:00",
+                "2024-07-08 23:59:59",
+            ],
+        ],
+    },
+
 
 }
 
