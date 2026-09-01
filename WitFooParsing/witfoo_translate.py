@@ -124,7 +124,7 @@ def is_benignish(edge):
 # Translation
 # ----------------------------------------------------------------------------
 
-def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None):
+def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None):
     os.makedirs(out, exist_ok=True)
     subjects, files_, netflows, events, gt = [], [], [], [], []
     node_type = {}
@@ -153,9 +153,23 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_c
         kept_endpoints.add(e.get("src"))
         kept_endpoints.add(e.get("dst"))
 
-    # Pass 0b: chunked shift plan (cut capture into chunks, each landing on its own date)
+    # Pass 0a: fraction-based chunk plan -> absolute-time chunks
     chunk_plan = None
-    if shift_chunks:
+    if shift_chunks_frac:
+        b_sorted = sorted(e["timestamp"] for e in edges if is_benignish(e) and e.get("timestamp", 0) > 1_500_000_000)
+        n = len(b_sorted)
+        chunk_plan = []
+        for part in shift_chunks_frac.split(","):
+            rng, target = part.split(":", 1)
+            f0, f1 = (float(x) for x in rng.split("-"))
+            c0 = b_sorted[min(int(f0 * n), n - 1)]
+            c1 = b_sorted[min(int(f1 * n), n - 1)] + (1e-6 if f1 >= 1 else 0)
+            tgt = datetime.fromisoformat(target).replace(tzinfo=timezone.utc).timestamp()
+            chunk_plan.append((c0, c1, tgt))
+        shift_to = None
+
+    # Pass 0b: chunked shift plan (cut capture into chunks, each landing on its own date)
+    if shift_chunks and chunk_plan is None:
         b_ts = [e["timestamp"] for e in edges if is_benignish(e) and e.get("timestamp", 0) > 1_500_000_000]
         t0 = min(b_ts)
         chunk_plan = []
@@ -262,6 +276,8 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_c
     if shift_delta is not None:
         lines.append(f"benign shift: -{shift_delta:.0f}s  (capture start {datetime.fromtimestamp(benign_min, tz=timezone.utc)} -> {shift_to})")
     if chunk_plan is not None:
+        counts = [sum(1 for e in edges if is_benignish(e) and e.get("timestamp",0) > 1_500_000_000 and c0 <= e["timestamp"] < c1) for c0, c1, _ in chunk_plan]
+        lines.append("benign events per chunk: " + ", ".join(f"{c:,}" for c in counts))
         for c0, c1, tgt in chunk_plan:
             lines.append(f"chunk {int((c0-chunk_plan[0][0])/60)}-{int((c1-chunk_plan[0][0])/60)}min -> {datetime.fromtimestamp(tgt, tz=timezone.utc):%Y-%m-%d %H:%M} UTC")
     if gt_date is not None:
@@ -303,6 +319,9 @@ def main():
                    help="Cut the benign capture into chunks landed on separate dates: "
                         "'0-40:2024-07-05T11:00:00,40-50:2024-07-06T11:00:00,50-9999:2024-07-08T11:00:00' "
                         "(minutes from capture start). Overrides --shift-benign-to.")
+    p.add_argument("--shift-chunks-frac", default=None,
+                   help="Like --shift-chunks but boundaries are CUMULATIVE EVENT FRACTIONS of the benign capture "
+                        "(robust to bursty traffic): '0-0.6:2024-07-05T11:00:00,0.6-0.75:2024-07-06T11:00:00,0.75-1:2024-07-08T18:03:00'")
     p.add_argument("--gt-date", default=None,
                    help="Emit ground truth ONLY for confirmed-malicious events on this UTC date (e.g. 2024-07-08). Default: all.")
     p.add_argument("-o", "--out", default="out")
@@ -310,10 +329,11 @@ def main():
 
     if args.toy:
         translate(TOY_NODES, TOY_EDGES, args.mapping, args.shift_benign_to, args.out,
-                  shift_chunks=args.shift_chunks, gt_date=args.gt_date)
+                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac)
     else:
         translate(iter_jsonl(args.nodes), iter_jsonl(args.edges), args.mapping,
-                  args.shift_benign_to, args.out, shift_chunks=args.shift_chunks, gt_date=args.gt_date)
+                  args.shift_benign_to, args.out, shift_chunks=args.shift_chunks, gt_date=args.gt_date,
+                  shift_chunks_frac=args.shift_chunks_frac)
 
 
 if __name__ == "__main__":
