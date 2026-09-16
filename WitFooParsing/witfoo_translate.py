@@ -124,7 +124,14 @@ def is_benignish(edge):
 # Translation
 # ----------------------------------------------------------------------------
 
-def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None):
+def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None):
+    if org is not None:
+        def _f(it):
+            for r in it:
+                if (r.get("attrs") or {}).get("org_id") == org:
+                    yield r
+        nodes_iter = _f(nodes_iter)
+        edges_iter = _f(edges_iter)
     os.makedirs(out, exist_ok=True)
     subjects, files_, netflows, events, gt = [], [], [], [], []
     node_type = {}
@@ -198,7 +205,10 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_c
         if t in ("CRED",):
             t = "CREDENTIAL"  # normalise straggler alias
         node_type[n["node_id"]] = t
-        if t == "HOST" or t in ("SERVICE", "FILE", "ACTOR"):
+        if t == "FILE":
+            u = n["id"]; path = (n.get("attrs") or {}).get("hostname") or u
+            files_.append((u, _h(path), path, idx(u)))
+        elif t == "HOST" or t in ("SERVICE", "ACTOR"):
             u, path, cmd = host_row(n)
             subjects.append((u, _h((path, cmd)), path, cmd, idx(u)))
         elif t == "CREDENTIAL":
@@ -322,6 +332,8 @@ def main():
     p.add_argument("--shift-chunks-frac", default=None,
                    help="Like --shift-chunks but boundaries are CUMULATIVE EVENT FRACTIONS of the benign capture "
                         "(robust to bursty traffic): '0-0.6:2024-07-05T11:00:00,0.6-0.75:2024-07-06T11:00:00,0.75-1:2024-07-08T18:03:00'")
+    p.add_argument("--org", default=None,
+                   help="Keep only events/nodes of this org (e.g. ORG-0004). New multi-org exports.")
     p.add_argument("--gt-date", default=None,
                    help="Emit ground truth ONLY for confirmed-malicious events on this UTC date (e.g. 2024-07-08). Default: all.")
     p.add_argument("-o", "--out", default="out")
@@ -329,11 +341,11 @@ def main():
 
     if args.toy:
         translate(TOY_NODES, TOY_EDGES, args.mapping, args.shift_benign_to, args.out,
-                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac)
+                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org)
     else:
         translate(iter_jsonl(args.nodes), iter_jsonl(args.edges), args.mapping,
                   args.shift_benign_to, args.out, shift_chunks=args.shift_chunks, gt_date=args.gt_date,
-                  shift_chunks_frac=args.shift_chunks_frac)
+                  shift_chunks_frac=args.shift_chunks_frac, org=args.org)
 
 
 if __name__ == "__main__":
