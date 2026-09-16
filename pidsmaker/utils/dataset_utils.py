@@ -99,9 +99,15 @@ rel2id_witfoo = {
     "DNS_RESOLVE": 13,
     14: "AUDIT_EVENT",
     "AUDIT_EVENT": 14,
+    15: "USER_ACTION_SRC",
+    "USER_ACTION_SRC": 15,
+    16: "USER_ACTION_DST",
+    "USER_ACTION_DST": 16,
+    17: "USER_ACTION",
+    "USER_ACTION": 17,
 }
 
-witfoo_datasets = ["witfoo_toy", "witfoo_2m", "witfoo_114m"]
+witfoo_datasets = ["witfoo_toy", "witfoo_2m", "witfoo_2m_v2", "witfoo_114m"]
 
 rel2id_atlasv2 = {
     0: "ACTION_FILE_UNDELETE",
