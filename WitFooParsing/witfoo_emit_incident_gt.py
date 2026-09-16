@@ -33,7 +33,12 @@ p.add_argument("--gt-date", required=True)
 p.add_argument("--out-dir", required=True)
 p.add_argument("--prefix", default="inc")
 p.add_argument("--pad-min", type=float, default=2.0)
+p.add_argument("--gt-file", default=None,
+               help="translate's ground_truth_nodes.csv; only uuids present there are emitted (authoritative)")
 a = p.parse_args()
+gt_allow = None
+if a.gt_file:
+    gt_allow = set(l.split(",")[0].strip() for l in open(a.gt_file) if l.strip())
 
 os.makedirs(a.out_dir, exist_ok=True)
 inc = collections.defaultdict(lambda: {"uuids": [], "ts": []})
@@ -46,6 +51,7 @@ for line in open(a.edges):
     if e.get("type") == "INCIDENT_LINK":
         continue
     edge_counter += 1
+    native_id = e.get("edge_id")  # v2 exports carry authoritative edge ids; translate uses them verbatim
     lab = e.get("labels") or {}
     if lab.get("label_binary") != "malicious" or lab.get("disposition") != "Disrupted":
         continue
@@ -56,7 +62,10 @@ for line in open(a.edges):
     if d.strftime("%Y-%m-%d") != a.gt_date:
         continue
     iid = lab.get("incident_id") or "no-primary-id"
-    inc[iid]["uuids"].append(f"e-{edge_counter:09d}")
+    u = native_id if native_id else f"e-{edge_counter:09d}"
+    if gt_allow is not None and u not in gt_allow:
+        continue  # translate excluded this event from GT; follow its lead
+    inc[iid]["uuids"].append(u)
     inc[iid]["ts"].append(t)
 
 # emit CSVs + config fragments
