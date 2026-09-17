@@ -1,0 +1,14 @@
+cat > ~/PIDSMaker/WitFooParsing/summarize_slurm.sh << 'SH'
+#!/bin/bash
+# usage: ./summarize_slurm.sh slurm-XXXX.out
+f=$1
+echo "== errors: $(grep -c Traceback $f) tracebacks =="
+grep -m3 -B1 "^[A-Za-z.]*Error" $f | tail -4
+echo "== runs =="
+grep -n "Run finished" $f
+echo "== final stats blocks (system order = job script order) =="
+grep -E " (precision|recall|fscore|fpr|tp|fp|tn|fn|percent_detected_attacks|adp_score): " $f \
+  | awk '{print $NF==""?$0:$0}' | grep -oE "(precision|recall|fscore|fpr|tp|fp|tn|fn|percent_detected_attacks|adp_score): .*" \
+  | paste -sd' ' - | sed 's/precision:/\nprecision:/g'
+SH
+chmod +x ~/PIDSMaker/WitFooParsing/summarize_slurm.sh
