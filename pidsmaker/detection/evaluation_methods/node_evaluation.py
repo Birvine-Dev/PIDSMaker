@@ -352,17 +352,20 @@ def main(
     plot_discrimination_metric(pred_scores, y_truth, discrim_img_file)
     discrim_tp = compute_discrimination_tp(pred_scores, nodes, node2attacks, y_truth)
     # plot_simple_scores(pred_scores, y_truth, simple_scores_img_file)
-    plot_scores_with_paths_node_level(
-        pred_scores,
-        y_truth,
-        nodes,
-        max_val_loss_tw,
-        tw_to_malicious_nodes,
-        node2attacks,
-        scores_img_file,
-        cfg,
-        thr,
-    )
+    try:
+        plot_scores_with_paths_node_level(
+            pred_scores,
+            y_truth,
+            nodes,
+            max_val_loss_tw,
+            tw_to_malicious_nodes,
+            node2attacks,
+            scores_img_file,
+            cfg,
+            thr,
+        )
+    except Exception as _pe:
+        log(f"score plot skipped: {_pe}")
     plot_scores_neat(pred_scores, y_truth, nodes, node2attacks, neat_scores_img_file, thr)
     # plot_score_seen(pred_scores, is_seen, seen_score_img_file)
     stats = classifier_evaluation(y_truth, y_preds, pred_scores)

@@ -81,16 +81,19 @@ def main(val_tw_path, test_tw_path, model_epoch_dir, cfg, tw_to_malicious_nodes,
     plot_discrimination_metric(scores, y_truth, discrim_img_file)
     discrim_tp = compute_discrimination_tp(scores, src_dst_t_type, edge2attack, y_truth)
     # plot_simple_scores(scores, y_truth, simple_scores_img_file)
-    plot_scores_with_paths_edge_level(
-        scores,
-        y_truth,
-        src_dst_t_type,
-        tw_to_malicious_nodes,
-        edge2attack,
-        scores_img_file,
-        cfg,
-        thr,
-    )
+    try:
+        plot_scores_with_paths_edge_level(
+            scores,
+            y_truth,
+            src_dst_t_type,
+            tw_to_malicious_nodes,
+            edge2attack,
+            scores_img_file,
+            cfg,
+            thr,
+        )
+    except Exception as _pe:
+        log(f"score plot skipped: {_pe}")
     plot_scores_neat(scores, y_truth, src_dst_t_type, edge2attack, neat_scores_img_file, thr)
     stats = classifier_evaluation(y_truth, y_preds, scores)
 
