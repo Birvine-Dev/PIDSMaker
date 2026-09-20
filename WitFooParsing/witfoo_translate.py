@@ -124,7 +124,7 @@ def is_benignish(edge):
 # Translation
 # ----------------------------------------------------------------------------
 
-def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None):
+def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None, clean_train_dates=None):
     if org is not None:
         def _f(it):
             for r in it:
@@ -132,6 +132,19 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_c
                     yield r
         nodes_iter = _f(nodes_iter)
         edges_iter = _f(edges_iter)
+    if clean_train_dates:
+        _ctd = set(clean_train_dates)
+        def _clean(it):
+            n_dropped = 0
+            for r in it:
+                lab = r.get("labels") or {}
+                if lab.get("label_binary") == "malicious":
+                    t = r.get("timestamp", 0)
+                    if t and t > 1.5e9 and datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d") in _ctd:
+                        n_dropped += 1
+                        continue
+                yield r
+        edges_iter = _clean(edges_iter)
     os.makedirs(out, exist_ok=True)
     subjects, files_, netflows, events, gt = [], [], [], [], []
     node_type = {}
@@ -332,6 +345,8 @@ def main():
     p.add_argument("--shift-chunks-frac", default=None,
                    help="Like --shift-chunks but boundaries are CUMULATIVE EVENT FRACTIONS of the benign capture "
                         "(robust to bursty traffic): '0-0.6:2024-07-05T11:00:00,0.6-0.75:2024-07-06T11:00:00,0.75-1:2024-07-08T18:03:00'")
+    p.add_argument("--clean-train-dates", default=None,
+                   help="comma-separated UTC dates (YYYY-MM-DD); malicious events on these dates are DROPPED (benign/suspicious kept) so the dates can serve as clean training days")
     p.add_argument("--org", default=None,
                    help="Keep only events/nodes of this org (e.g. ORG-0004). New multi-org exports.")
     p.add_argument("--gt-date", default=None,
@@ -341,11 +356,12 @@ def main():
 
     if args.toy:
         translate(TOY_NODES, TOY_EDGES, args.mapping, args.shift_benign_to, args.out,
-                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org)
+                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org, clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None))
     else:
         translate(iter_jsonl(args.nodes), iter_jsonl(args.edges), args.mapping,
                   args.shift_benign_to, args.out, shift_chunks=args.shift_chunks, gt_date=args.gt_date,
-                  shift_chunks_frac=args.shift_chunks_frac, org=args.org)
+                  shift_chunks_frac=args.shift_chunks_frac, org=args.org,
+                  clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None))
 
 
 if __name__ == "__main__":
