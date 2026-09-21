@@ -323,11 +323,25 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_c
 
 
 def iter_jsonl(path):
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                yield json.loads(line)
+    """Yield JSON rows from a file, a .gz file, a directory of shards, or a glob.
+    Shards are read in sorted order so edge numbering stays stable."""
+    import glob as _glob, gzip as _gzip, os as _os
+    if _os.path.isdir(path):
+        paths = sorted(_glob.glob(_os.path.join(path, "edges-*.jsonl*")) or
+                       _glob.glob(_os.path.join(path, "*.jsonl*")))
+    elif any(c in path for c in "*?["):
+        paths = sorted(_glob.glob(path))
+    else:
+        paths = [path]
+    if not paths:
+        raise SystemExit(f"no input files match: {path}")
+    for p in paths:
+        opener = _gzip.open if p.endswith(".gz") else open
+        with opener(p, "rt") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    yield json.loads(line)
 
 
 def main():
