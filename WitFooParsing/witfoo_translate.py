@@ -124,27 +124,35 @@ def is_benignish(edge):
 # Translation
 # ----------------------------------------------------------------------------
 
-def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None, clean_train_dates=None):
-    if org is not None:
-        def _f(it):
-            for r in it:
-                if (r.get("attrs") or {}).get("org_id") == org:
+def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None, clean_train_dates=None, edges_factory=None):
+    def _apply_filters(it, is_edges=True):
+        if org is not None:
+            def _f(inner):
+                for r in inner:
+                    if (r.get("attrs") or {}).get("org_id") == org:
+                        yield r
+            it = _f(it)
+        if is_edges and clean_train_dates:
+            _ctd = set(clean_train_dates)
+            def _clean(inner):
+                for r in inner:
+                    lab = r.get("labels") or {}
+                    if lab.get("label_binary") == "malicious":
+                        t = r.get("timestamp", 0)
+                        if t and t > 1.5e9 and datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d") in _ctd:
+                            continue
                     yield r
-        nodes_iter = _f(nodes_iter)
-        edges_iter = _f(edges_iter)
-    if clean_train_dates:
-        _ctd = set(clean_train_dates)
-        def _clean(it):
-            n_dropped = 0
-            for r in it:
-                lab = r.get("labels") or {}
-                if lab.get("label_binary") == "malicious":
-                    t = r.get("timestamp", 0)
-                    if t and t > 1.5e9 and datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d") in _ctd:
-                        n_dropped += 1
-                        continue
-                yield r
-        edges_iter = _clean(edges_iter)
+            it = _clean(it)
+        return it
+
+    nodes_iter = _apply_filters(nodes_iter, is_edges=False)
+    edges_iter = _apply_filters(edges_iter)
+
+    streaming = (edges_factory is not None and shift_to is None
+                 and shift_chunks is None and shift_chunks_frac is None)
+    if streaming:
+        return _translate_streaming(nodes_iter, edges_factory, _apply_filters,
+                                    mapping, out, gt_date)
     os.makedirs(out, exist_ok=True)
     subjects, files_, netflows, events, gt = [], [], [], [], []
     node_type = {}
@@ -322,6 +330,148 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_c
     return summary
 
 
+
+
+def _translate_streaming(nodes_iter, edges_factory, apply_filters, mapping, out, gt_date):
+    """Constant-memory path for unshifted runs (84M-scale). Two passes over
+    edges from disk; node/event rows stream straight to CSV. Only the entity
+    registry (~hosts/creds/files) is held in memory. Output is byte-identical
+    to the legacy path for the same inputs."""
+    os.makedirs(out, exist_ok=True)
+    uuid2idx = {}
+    next_idx = [0]
+    def idx(u):
+        if u not in uuid2idx:
+            uuid2idx[u] = next_idx[0]
+            next_idx[0] += 1
+        return uuid2idx[u]
+
+    # Pass 1 over edges: endpoints referenced by kept events
+    kept_endpoints = set()
+    for e in apply_filters(edges_factory()):
+        if e.get("type") == "INCIDENT_LINK":
+            continue
+        ts0 = e.get("timestamp")
+        if not ts0 or ts0 < 1_500_000_000:
+            continue
+        kept_endpoints.add(e.get("src"))
+        kept_endpoints.add(e.get("dst"))
+
+    # Nodes: emit entity tables now (small), registering indices
+    node_type = {}
+    subjects, files_ = [], []
+    n_isolated = 0
+    for n in nodes_iter:
+        if n["node_id"] not in kept_endpoints:
+            n_isolated += 1
+            continue
+        t = str(n.get("type", "")).upper()
+        if t in ("CRED",):
+            t = "CREDENTIAL"
+        node_type[n["node_id"]] = t
+        if t == "FILE":
+            u = n["id"]; path = (n.get("attrs") or {}).get("hostname") or u
+            files_.append((u, _h(path), path, idx(u)))
+        elif t == "HOST" or t in ("SERVICE", "ACTOR"):
+            u, path, cmd = host_row(n)
+            subjects.append((u, _h((path, cmd)), path, cmd, idx(u)))
+        elif t == "CREDENTIAL":
+            u, path = credential_row(n)
+            files_.append((u, _h(path), path, idx(u)))
+    known = set(node_type)
+
+    # Pass 2 over edges: stream netflow + event rows to disk
+    f_net = open(os.path.join(out, "netflow_node_table.csv"), "w", newline="")
+    f_evt = open(os.path.join(out, "event_table.csv"), "w", newline="")
+    w_net, w_evt = csv.writer(f_net), csv.writer(f_evt)
+    w_net.writerow(["node_uuid", "hash_id", "src_addr", "src_port", "dst_addr", "dst_port", "index_id"])
+    w_evt.writerow(["src_node", "src_index_id", "operation", "dst_node", "dst_index_id", "event_uuid", "timestamp_rec"])
+    gt = []
+    sample_net, sample_evt = [], []
+    n_edges = n_mal = skipped_ts = 0
+    n_netflows = n_events = 0
+    for e in apply_filters(edges_factory()):
+        if e.get("type") == "INCIDENT_LINK":
+            continue
+        ts = e.get("timestamp")
+        if not ts or ts < 1_500_000_000:
+            skipped_ts += 1
+            continue
+        if e.get("src") not in known or e.get("dst") not in known:
+            continue
+        ts_ns = int(ts * NS)
+        n_edges += 1
+        mal = is_confirmed_malicious(e)
+        if mal and gt_date is not None:
+            d = datetime.fromtimestamp(e["timestamp"], tz=timezone.utc).strftime("%Y-%m-%d")
+            if d != gt_date:
+                mal = False
+        if mal:
+            n_mal += 1
+        if mapping == "A":
+            w_evt.writerow((e["src"], idx(e["src"]), e.get("type", "EVENT"),
+                            e["dst"], idx(e["dst"]), e["edge_id"], ts_ns))
+            n_events += 1
+            if mal:
+                gt.extend([e["src"], e["dst"]])
+        else:
+            uuid, sa, sp, da, dp = event_node_row(e)
+            # Event uuids derive from native edge_ids, which are unique in the
+            # source data (input contract; verified for 2M, assumed for 84M) -
+            # so they get a direct sequential index and are never registered,
+            # keeping memory flat at any scale.
+            ev_idx = next_idx[0]; next_idx[0] += 1
+            row_net = (uuid, _h((sa, sp, da, dp)), sa, sp, da, dp, ev_idx)
+            w_net.writerow(row_net)
+            if len(sample_net) < 3: sample_net.append(row_net)
+            n_netflows += 1
+            st_src, st_dst = stub_type(e, mapping)
+            row_s = (e["src"], idx(e["src"]), st_src, uuid, ev_idx, f"{e['edge_id']}:s", ts_ns)
+            row_d = (uuid, ev_idx, st_dst, e["dst"], idx(e["dst"]), f"{e['edge_id']}:d", ts_ns)
+            w_evt.writerow(row_s); w_evt.writerow(row_d)
+            if len(sample_evt) < 4: sample_evt.append(row_s)
+            if len(sample_evt) < 4: sample_evt.append(row_d)
+            n_events += 2
+            if mal:
+                gt.append(uuid)
+    f_net.close(); f_evt.close()
+
+    gt = sorted(set(gt))
+    def w(name, header, rows):
+        with open(os.path.join(out, name), "w", newline="") as f:
+            wr = csv.writer(f)
+            wr.writerow(header)
+            wr.writerows(rows)
+    w("subject_node_table.csv", ["node_uuid", "hash_id", "path", "cmd", "index_id"], subjects)
+    w("file_node_table.csv", ["node_uuid", "hash_id", "path", "index_id"], files_)
+    with open(os.path.join(out, "ground_truth_nodes.csv"), "w", newline="") as f:
+        wr = csv.writer(f)
+        wr.writerows((g, "malicious", "") for g in gt)
+
+    total_nodes = len(subjects) + len(files_) + n_netflows
+    lines = [
+        f"Mapping {mapping}  |  output: {out}/",
+        f"nodes: {total_nodes}  (subject {len(subjects)}, file {len(files_)}, netflow/event {n_netflows}; {n_isolated} isolated source nodes not emitted)",
+        f"edges: {n_events}  (from {n_edges} source events; {n_mal} confirmed-malicious; {skipped_ts} corrupt-ts skipped)",
+        f"ground-truth positives: {len(gt)}  ({100*len(gt)/max(total_nodes,1):.1f}% of nodes)",
+    ]
+    if gt_date is not None:
+        lines.append(f"ground truth restricted to confirmed-malicious events on {gt_date} (dormant archive excluded)")
+    lines.append("")
+    lines.append("sample rows ORTHRUS-side (what featurization will read):")
+    for r in subjects[:2]:
+        lines.append(f"  subject: uuid={r[0]}  path={r[2]}  cmd={r[3]}  idx={r[4]}")
+    for r in files_[:1]:
+        lines.append(f"  file:    uuid={r[0]}  path={r[2]}  idx={r[3]}")
+    for r in sample_net[:3]:
+        lines.append(f"  event:   uuid={r[0]}  ORTHRUS-label-text='netflow {r[4]} {r[5]}'  idx={r[6]}")
+    for r in sample_evt[:4]:
+        lines.append(f"  edge:    {r[0]} -[{r[2]}]-> {r[3]}  @ {r[6]}")
+    print("\n".join(lines))
+    with open(os.path.join(out, "summary.txt"), "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def iter_jsonl(path):
     """Yield JSON rows from a file, a .gz file, a directory of shards, or a glob.
     Shards are read in sorted order so edge numbering stays stable."""
@@ -370,12 +520,12 @@ def main():
 
     if args.toy:
         translate(TOY_NODES, TOY_EDGES, args.mapping, args.shift_benign_to, args.out,
-                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org, clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None))
+                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org, clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None))
     else:
         translate(iter_jsonl(args.nodes), iter_jsonl(args.edges), args.mapping,
                   args.shift_benign_to, args.out, shift_chunks=args.shift_chunks, gt_date=args.gt_date,
                   shift_chunks_frac=args.shift_chunks_frac, org=args.org,
-                  clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None))
+                  clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None))
 
 
 if __name__ == "__main__":
