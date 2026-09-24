@@ -107,7 +107,7 @@ rel2id_witfoo = {
     "USER_ACTION": 17,
 }
 
-witfoo_datasets = ["witfoo_toy", "witfoo_2m", "witfoo_2m_v2", "witfoo_2m_v2e", "witfoo_2m_v2e_s4", "witfoo_84m", "witfoo_114m"]
+witfoo_datasets = ["witfoo_toy", "witfoo_2m", "witfoo_2m_v2", "witfoo_2m_v2e", "witfoo_2m_v2e_s4", "witfoo_84m", "witfoo_84m_d8", "witfoo_114m"]
 
 rel2id_atlasv2 = {
     0: "ACTION_FILE_UNDELETE",
