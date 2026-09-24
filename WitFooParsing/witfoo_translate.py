@@ -124,7 +124,7 @@ def is_benignish(edge):
 # Translation
 # ----------------------------------------------------------------------------
 
-def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None, clean_train_dates=None, edges_factory=None, benign_sample_mod=None):
+def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None, clean_train_dates=None, edges_factory=None, benign_sample_mod=None, benign_sample_dates=None):
     def _apply_filters(it, is_edges=True):
         if org is not None:
             def _f(inner):
@@ -134,12 +134,18 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_c
             it = _f(it)
         if is_edges and benign_sample_mod:
             K = benign_sample_mod
+            _bsd = set(benign_sample_dates) if benign_sample_dates else None
             def _samp(inner):
                 import hashlib as _hl
                 for r in inner:
                     if is_confirmed_malicious(r):
                         yield r
                         continue
+                    if _bsd is not None:
+                        t = r.get("timestamp", 0)
+                        if not t or t < 1.5e9 or datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d") not in _bsd:
+                            yield r
+                            continue
                     h = int(_hl.md5(str(r.get("edge_id")).encode()).hexdigest()[:8], 16)
                     if h % K == 0:
                         yield r
@@ -523,6 +529,8 @@ def main():
                         "(robust to bursty traffic): '0-0.6:2024-07-05T11:00:00,0.6-0.75:2024-07-06T11:00:00,0.75-1:2024-07-08T18:03:00'")
     p.add_argument("--benign-sample-mod", type=int, default=None,
                    help="keep only 1/K of benign+suspicious events, chosen deterministically by md5(edge_id) - confirmed-malicious events are ALWAYS kept, so ground truth is unchanged; use for density-ladder experiments")
+    p.add_argument("--benign-sample-dates", default=None,
+                   help="comma-separated UTC dates (YYYY-MM-DD); --benign-sample-mod applies ONLY to events on these dates (others pass untouched). Omit to sample all dates.")
     p.add_argument("--clean-train-dates", default=None,
                    help="comma-separated UTC dates (YYYY-MM-DD); malicious events on these dates are DROPPED (benign/suspicious kept) so the dates can serve as clean training days")
     p.add_argument("--org", default=None,
@@ -534,12 +542,12 @@ def main():
 
     if args.toy:
         translate(TOY_NODES, TOY_EDGES, args.mapping, args.shift_benign_to, args.out,
-                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org, clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None), benign_sample_mod=args.benign_sample_mod)
+                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org, clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None), benign_sample_mod=args.benign_sample_mod, benign_sample_dates=(args.benign_sample_dates.split(",") if getattr(args, 'benign_sample_dates', None) else None))
     else:
         translate(iter_jsonl(args.nodes), iter_jsonl(args.edges), args.mapping,
                   args.shift_benign_to, args.out, shift_chunks=args.shift_chunks, gt_date=args.gt_date,
                   shift_chunks_frac=args.shift_chunks_frac, org=args.org,
-                  clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None), benign_sample_mod=args.benign_sample_mod)
+                  clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None), benign_sample_mod=args.benign_sample_mod, benign_sample_dates=(args.benign_sample_dates.split(",") if getattr(args, 'benign_sample_dates', None) else None))
 
 
 if __name__ == "__main__":
