@@ -124,7 +124,7 @@ def is_benignish(edge):
 # Translation
 # ----------------------------------------------------------------------------
 
-def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None, clean_train_dates=None, edges_factory=None):
+def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_chunks=None, gt_date=None, shift_chunks_frac=None, org=None, clean_train_dates=None, edges_factory=None, benign_sample_mod=None):
     def _apply_filters(it, is_edges=True):
         if org is not None:
             def _f(inner):
@@ -132,6 +132,18 @@ def translate(nodes_iter, edges_iter, mapping, shift_to=None, out="out", shift_c
                     if (r.get("attrs") or {}).get("org_id") == org:
                         yield r
             it = _f(it)
+        if is_edges and benign_sample_mod:
+            K = benign_sample_mod
+            def _samp(inner):
+                import hashlib as _hl
+                for r in inner:
+                    if is_confirmed_malicious(r):
+                        yield r
+                        continue
+                    h = int(_hl.md5(str(r.get("edge_id")).encode()).hexdigest()[:8], 16)
+                    if h % K == 0:
+                        yield r
+            it = _samp(it)
         if is_edges and clean_train_dates:
             _ctd = set(clean_train_dates)
             def _clean(inner):
@@ -509,6 +521,8 @@ def main():
     p.add_argument("--shift-chunks-frac", default=None,
                    help="Like --shift-chunks but boundaries are CUMULATIVE EVENT FRACTIONS of the benign capture "
                         "(robust to bursty traffic): '0-0.6:2024-07-05T11:00:00,0.6-0.75:2024-07-06T11:00:00,0.75-1:2024-07-08T18:03:00'")
+    p.add_argument("--benign-sample-mod", type=int, default=None,
+                   help="keep only 1/K of benign+suspicious events, chosen deterministically by md5(edge_id) - confirmed-malicious events are ALWAYS kept, so ground truth is unchanged; use for density-ladder experiments")
     p.add_argument("--clean-train-dates", default=None,
                    help="comma-separated UTC dates (YYYY-MM-DD); malicious events on these dates are DROPPED (benign/suspicious kept) so the dates can serve as clean training days")
     p.add_argument("--org", default=None,
@@ -520,12 +534,12 @@ def main():
 
     if args.toy:
         translate(TOY_NODES, TOY_EDGES, args.mapping, args.shift_benign_to, args.out,
-                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org, clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None))
+                  shift_chunks=args.shift_chunks, gt_date=args.gt_date, shift_chunks_frac=args.shift_chunks_frac, org=args.org, clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None), benign_sample_mod=args.benign_sample_mod)
     else:
         translate(iter_jsonl(args.nodes), iter_jsonl(args.edges), args.mapping,
                   args.shift_benign_to, args.out, shift_chunks=args.shift_chunks, gt_date=args.gt_date,
                   shift_chunks_frac=args.shift_chunks_frac, org=args.org,
-                  clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None))
+                  clean_train_dates=(args.clean_train_dates.split(",") if args.clean_train_dates else None), edges_factory=((lambda: iter_jsonl(args.edges)) if getattr(args, 'edges', None) else None), benign_sample_mod=args.benign_sample_mod)
 
 
 if __name__ == "__main__":
