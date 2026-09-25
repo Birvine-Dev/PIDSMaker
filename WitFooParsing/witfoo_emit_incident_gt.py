@@ -44,7 +44,23 @@ os.makedirs(a.out_dir, exist_ok=True)
 inc = collections.defaultdict(lambda: {"uuids": [], "ts": []})
 edge_counter = -1  # replicates translate's e-counter over org-filtered, non-INCIDENT_LINK rows
 
-for line in open(a.edges):
+def _iter_edge_lines(path):
+    import glob as _g, gzip as _gz
+    if os.path.isdir(path):
+        paths = sorted(_g.glob(os.path.join(path, "edges-*.jsonl*")) or _g.glob(os.path.join(path, "*.jsonl*")))
+    elif any(c in path for c in "*?["):
+        paths = sorted(_g.glob(path))
+    else:
+        paths = [path]
+    if not paths:
+        raise SystemExit(f"no edge files match: {path}")
+    for p_ in paths:
+        opener = _gz.open if p_.endswith(".gz") else open
+        with opener(p_, "rt") as f_:
+            for line_ in f_:
+                yield line_
+
+for line in _iter_edge_lines(a.edges):
     e = json.loads(line)
     if (e.get("attrs") or {}).get("org_id") != a.org:
         continue  # translate's iterator-level org filter
