@@ -95,7 +95,9 @@ for iid, r in sorted(inc.items(), key=lambda x: min(x[1]["ts"])):
     t0, t1 = min(r["ts"]), max(r["ts"])
     w0 = datetime.fromtimestamp(t0, tz=timezone.utc) + US_EASTERN_JULY_OFFSET - timedelta(minutes=a.pad_min)
     w1 = datetime.fromtimestamp(t1, tz=timezone.utc) + US_EASTERN_JULY_OFFSET + timedelta(minutes=a.pad_min)
-    rel = f"witfoo/2m_v2_incidents/{fname}"
+    _norm = a.out_dir.rstrip("/").replace("\\", "/")
+    _gt_rel_dir = _norm.split("Ground_Truth/orthrus/")[-1] if "Ground_Truth/orthrus/" in _norm else "witfoo/" + os.path.basename(_norm)
+    rel = f"{_gt_rel_dir}/{fname}"
     gt_paths.append(rel)
     windows.append((rel, w0.strftime("%Y-%m-%d %H:%M:%S"), w1.strftime("%Y-%m-%d %H:%M:%S")))
     rows.append((short, len(r["uuids"]), round(t1 - t0, 1)))
