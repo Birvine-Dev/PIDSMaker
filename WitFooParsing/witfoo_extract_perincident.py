@@ -37,7 +37,8 @@ MANIFEST = [
     ("orthrus_node",  "WITFOO_2M_V2",  "75e19314b356d8fa44532d994aa9af7c2c396dce9d16a8e8f496ac14969ec561", "cache/499670"),
     ("orthrus_node",  "WITFOO_84M_D8", "75e19314b356d8fa44532d994aa9af7c2c396dce9d16a8e8f496ac14969ec561", "slurm-499670"),
     ("orthrus_node",  "WITFOO_84M_D4", "75e19314b356d8fa44532d994aa9af7c2c396dce9d16a8e8f496ac14969ec561", "slurm-499670"),
-    # ("nodlink",     "WITFOO_2M_V2",  "<FILL FROM PROBE: flags==23,603 & tp==3,062 at ep9>", "probe"),
+    ("nodlink",       "WITFOO_2M_V2",  "9468d443c11f385c4b4f62ea1de62dcac710baedd6ae47eeb3cf01eb768e46fc", "probe:flags=23603,tp=3062"),
+    ("orthrus_edge",  "WITFOO_2M_V2",  "46d392aabc53313a8d6124b9fa04e1bc51dc523abaae4e134eabf360265ad261", "probe:flags=5007,tp=1257"),
 ]
 
 EXPECTED_POS = {"WITFOO_2M_V2": 3062, "WITFOO_84M_D8": 3040, "WITFOO_84M_D4": 3040}
