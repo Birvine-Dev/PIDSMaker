@@ -70,29 +70,44 @@ def ap_entity(ys, yt):
     return float(np.sum(prec[newtp]) / npos)
 
 def adp_incident(ys, yt, ids, amap):
-    """Framework-comparable ADP (pinned definition): rank all entities by score
-    descending; walking down, an ATTACK counts as detected the first time one of
-    its entities passes; the curve is precision vs %attacks-detected, and its
-    area equals the mean, over attacks, of the list precision at each attack's
-    first detection. Cross-check against the framework's printed adp_score."""
+    """Exact replication of the framework's plot_detected_attacks_vs_precision:
+    walk the ranking (tie order = np.argsort(scores)[::-1], as the framework does);
+    at each entity record precision and %attacks-detected (attack detected once
+    any of its mapped entities has passed); start the curve at (0,0); collapse
+    duplicate precision values by MAX detected-%; ADP = trapz(%detected, precision)
+    / 100. total_attacks is taken from the mapping, matching the framework."""
     if amap is None or yt.sum() == 0:
         return ""
-    order = np.argsort(-ys, kind="stable")
-    tp = 0
-    seen = set()
-    precs = []
-    for rank, i in enumerate(order, 1):
-        if yt[i] == 1:
-            tp += 1
-            key = ids[i] if ids is not None else i
-            attacks = amap.get(key) or ["?"]
-            if not isinstance(attacks, (list, set, tuple)):
-                attacks = [attacks]
-            for a in attacks:
-                if a not in seen:
-                    seen.add(a)
-                    precs.append(tp / rank)
-    return round(float(np.mean(precs)), 4) if precs else 0.0
+    order = np.argsort(ys)[::-1]           # framework's exact tie order
+    yto = np.asarray(yt)[order]
+    n = len(yto)
+    tp_cum = np.cumsum(yto)
+    prec = tp_cum / np.arange(1, n + 1, dtype=float)
+    total = len(set(a for v in amap.values()
+                    for a in (v if isinstance(v, (list, set, tuple)) else [v])))
+    pct = np.zeros(n)
+    det = set()
+    cur = 0.0
+    last = 0
+    for p_i in np.where(yto == 1)[0]:
+        pct[last:p_i] = cur
+        i = order[p_i]
+        key = ids[i] if ids is not None else i
+        v = amap.get(key)
+        if v:
+            det.update(v if isinstance(v, (list, set, tuple)) else [v])
+        cur = 100.0 * len(det) / max(total, 1)
+        pct[p_i] = cur
+        last = p_i + 1
+    pct[last:] = cur
+    prec = np.concatenate(([0.0], prec))
+    pct = np.concatenate(([0.0], pct))
+    o = np.argsort(prec, kind="stable")
+    ps, cs = prec[o], pct[o]
+    uniq, idx = np.unique(ps, return_index=True)
+    maxs = np.maximum.reduceat(cs, idx)
+    _trapz = getattr(np, "trapz", None) or np.trapezoid
+    return round(float(_trapz(maxs, uniq)) / 100.0, 4)
 
 def headline(yp, yt):
     tp = int(((yp == 1) & (yt == 1)).sum()); fp = int(((yp == 1) & (yt == 0)).sum())
