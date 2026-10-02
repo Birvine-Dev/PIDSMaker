@@ -53,12 +53,12 @@ def load(pkl):
     kind = "node" if "nodes" in d else "edge"
     return ys, yp, yt, ids, amap, kind
 
-def adp(ys, yt):
-    """Pinned definition: rank all entities by score desc; walking down, track
-    precision and %attacks-detected (attack counted once >=1 of its entities has
-    passed) -- here at entity granularity, attacks==positive entities, so the
-    curve is precision vs recall over the ranking; area under it / 1.0.
-    Cross-check against the framework's printed adp_score per epoch."""
+def ap_entity(ys, yt):
+    """Entity-level Average Precision: area under precision-recall over the
+    ranking, counting each positive ENTITY individually. NOT the framework's
+    ADP (which is incident-granular) -- kept as a complementary column; the
+    gap between the two is itself informative (ADP can be high while most
+    attack events are never ranked highly)."""
     order = np.argsort(-ys, kind="stable")
     ytr = yt[order]
     tp_cum = np.cumsum(ytr)
@@ -66,10 +66,33 @@ def adp(ys, yt):
     if npos == 0:
         return 0.0
     prec = tp_cum / np.arange(1, len(ytr) + 1)
-    rec = tp_cum / npos
-    # area under precision as a function of recall (step integration at each new tp)
     newtp = ytr == 1
     return float(np.sum(prec[newtp]) / npos)
+
+def adp_incident(ys, yt, ids, amap):
+    """Framework-comparable ADP (pinned definition): rank all entities by score
+    descending; walking down, an ATTACK counts as detected the first time one of
+    its entities passes; the curve is precision vs %attacks-detected, and its
+    area equals the mean, over attacks, of the list precision at each attack's
+    first detection. Cross-check against the framework's printed adp_score."""
+    if amap is None or yt.sum() == 0:
+        return ""
+    order = np.argsort(-ys, kind="stable")
+    tp = 0
+    seen = set()
+    precs = []
+    for rank, i in enumerate(order, 1):
+        if yt[i] == 1:
+            tp += 1
+            key = ids[i] if ids is not None else i
+            attacks = amap.get(key) or ["?"]
+            if not isinstance(attacks, (list, set, tuple)):
+                attacks = [attacks]
+            for a in attacks:
+                if a not in seen:
+                    seen.add(a)
+                    precs.append(tp / rank)
+    return round(float(np.mean(precs)), 4) if precs else 0.0
 
 def headline(yp, yt):
     tp = int(((yp == 1) & (yt == 1)).sum()); fp = int(((yp == 1) & (yt == 0)).sum())
@@ -142,22 +165,24 @@ def extract(B, out_dir):
                 print(f"!! SKIP {system}/{ds} ep{ep}: positives {npos} != expected "
                       f"{EXPECTED_POS[ds]} — WRONG PICKLE?"); continue
             tp, fp, fn, P, R, F1 = headline(yp, yt)
-            a = adp(ys, yt)
+            a_inc = adp_incident(ys, yt, ids, amap)
+            a_ent = ap_entity(ys, yt)
             ci = bootstrap_ci(yp, yt, B) if B else ("", "", "", "")
             srows.append([system, ds, h[:8], src, kind, ep, len(yt), npos,
                           int(yp.sum()), tp, fp, fn, round(P, 5), round(R, 5),
                           round(F1, 5), round(1 - P if tp + fp else "", 5) if tp + fp else "",
-                          round(a, 4), *[round(x, 5) if x != "" else "" for x in ci]])
+                          a_inc, round(a_ent, 4),
+                          *[round(x, 5) if x != "" else "" for x in ci]])
             if amap is not None:
                 irows.extend(incident_rows(ys, yp, yt, ids, amap,
                                            [system, ds, h[:8], ep]))
             print(f"ok {system:<13} {ds:<14} ep{ep}: tp {tp:>6,} fp {fp:>8,} "
-                  f"P {P:.3f} R {R:.3f} ADP {a:.3f}")
+                  f"P {P:.3f} R {R:.3f} ADP {a_inc} AP {a_ent:.3f}")
     with open(os.path.join(out_dir, "per_run_summary.csv"), "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["system", "dataset", "hash8", "verified_from", "level", "epoch",
                     "n_scored", "n_pos", "flags", "tp", "fp", "fn", "precision",
-                    "recall", "f1", "fdr", "adp_computed",
+                    "recall", "f1", "fdr", "adp_incident", "ap_entity",
                     "P_ci_lo", "P_ci_hi", "R_ci_lo", "R_ci_hi"])
         w.writerows(srows)
     with open(os.path.join(out_dir, "per_incident.csv"), "w", newline="") as f:
