@@ -3,12 +3,6 @@
   * witfoo_incident_stats_v3.py  (the union-find merge that yields the 54 attacks)
   * nodlink_threshold_sweep.py   (the sweep behind the threshold findings)
 
-Both scripts are CLI programs (argparse at module level), so each test runs
-them as a subprocess on small synthetic inputs where the right answer is
-computable by hand. No GPU, no database; numpy is the only non-stdlib need
-(the sweep script imports it).
-
-    pytest tests/test_witfoo_analysis.py -v
 """
 
 import csv

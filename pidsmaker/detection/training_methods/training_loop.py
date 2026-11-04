@@ -224,8 +224,7 @@ def main(cfg):
         # reloaded later (re-evaluation, reseeded inference, downstream analysis)
         # without retraining. Adds `import os` and `save_model`; the original
         # commented-out lines referenced `gnn_models_dir`, which is not defined
-        # anywhere (dead code) — `cfg.training._trained_models_dir` is the
-        # framework's derived path for stored models (see config/pipeline.py).
+        # anywhere (dead code) 
         _save_ckpt = getattr(cfg.training, "save_checkpoints", None)
         if _save_ckpt is None or _save_ckpt:
             model_path = os.path.join(cfg.training._trained_models_dir, f"model_epoch_{epoch}")

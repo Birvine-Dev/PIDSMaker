@@ -1,11 +1,6 @@
 """Unit tests for the WitFoo pipeline: translate rules, mappings, filters, and
 the relation registry.
 
-These are pure-Python tests: no GPU, no database, no torch. They load the
-modules by file path, so they run on any machine from the repo root:
-
-    pytest tests/test_witfoo_parser.py -v
-
 The toy graph (9 entities, 12 events, 5 confirmed-malicious) is the built-in
 one from witfoo_translate.py, which mirrors the structure of real incident
 9fd6e430. Under mapping B it reifies to 21 nodes.
